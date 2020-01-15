@@ -287,7 +287,7 @@ buildLuarocksPackage {
 ]]..long_desc_str..[[
 ]]..maintainers_str..[[
     license = {
-      fullName = ]]..util.LQ(spec.description.license)..[[;
+      fullName = ]]..util.LQ(spec.description.license or "No license")..[[;
     };
   };
 };
