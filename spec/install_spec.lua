@@ -3,8 +3,8 @@ local lfs = require("lfs")
 local run = test_env.run
 local testing_paths = test_env.testing_paths
 local env_variables = test_env.env_variables
-local get_tmp_path = test_env.get_tmp_path
 local write_file = test_env.write_file
+local git_repo = require("spec.util.git_repo")
 
 test_env.unload_luarocks()
 
@@ -23,8 +23,6 @@ local extra_rocks = {
    "/wsapi-1.6-1.src.rock",
    "/luafilesystem-1.6.3-2.src.rock",
    "/luafilesystem-1.6.3-1.src.rock",
-   "/luacheck-0.7.3-1.src.rock",
-   "/luacheck-0.8.0-1.src.rock",
    "/sailor-0.5-3.src.rock",
    "/sailor-0.5-4.src.rock",
 }
@@ -81,6 +79,12 @@ describe("luarocks install #integration", function()
       it("installs a package with a dependency", function()
          assert.is_true(run.luarocks_bool("install luasec " .. test_env.openssl_dirs))
          assert.is_true(run.luarocks_bool("show luasocket"))
+      end)
+
+      it("installs a package without its documentation #only", function()
+         assert.is_true(run.luarocks_bool("install wsapi 1.6 --no-doc"))
+         assert.is_true(run.luarocks_bool("show wsapi 1.6"))
+         assert.is.falsy(lfs.attributes(testing_paths.testing_sys_rocks .. "/wsapi/1.6-1/doc"))
       end)
    end)
    
@@ -227,6 +231,33 @@ describe("luarocks install #integration", function()
          assert(run.luarocks_bool("install has_build_dep --server=" .. testing_paths.fixtures_dir .. "/a_repo" ))
          assert(run.luarocks_bool("show has_build_dep 1.0"))
          assert.falsy(run.luarocks_bool("show a_build_dep 1.0"))
+      end)
+   end)
+
+   describe("#unix install runs build from #git", function()
+      local git
+
+      setup(function()
+         git = git_repo.start()
+      end)
+      
+      teardown(function()
+         if git then
+            git:stop()
+         end
+      end)
+
+      it("using --branch", function()
+         write_file("my_branch-1.0-1.rockspec", [[
+            rockspec_format = "3.0"
+            package = "my_branch"
+            version = "1.0-1"
+            source = {
+               url = "git://localhost/testrock"
+            }
+         ]], finally)
+         assert.is_false(run.luarocks_bool("install --branch unknown-branch ./my_branch-1.0-1.rockspec"))
+         assert.is_true(run.luarocks_bool("install --branch test-branch ./my_branch-1.0-1.rockspec"))
       end)
    end)
 

@@ -436,6 +436,7 @@ local function create_env(testing_paths)
    end
    
    local env_variables = {}
+   env_variables.GNUPGHOME = testing_paths.gpg_dir
    env_variables.LUA_VERSION = luaversion_short
    env_variables.LUAROCKS_CONFIG = testing_paths.testrun_dir .. "/testing_config.lua"
    if test_env.TEST_TARGET_OS == "windows" then
@@ -593,6 +594,7 @@ local function create_paths(luaversion_full)
    end
 
    testing_paths.fixtures_dir = base_dir .. "/spec/fixtures"
+   testing_paths.gpg_dir = testing_paths.fixtures_dir .. "/gpg"
    testing_paths.fixtures_repo_dir = base_dir .. "/spec/fixtures/a_repo"
    testing_paths.util_dir = base_dir .. "/spec/util"
    testing_paths.testrun_dir = base_dir .. "/testrun"
@@ -648,6 +650,7 @@ function test_env.setup_specs(extra_rocks)
       require("spec.util.git_repo")
 
       package.path = test_env.env_variables.LUA_PATH
+      package.cpath = test_env.env_variables.LUA_CPATH
 
       test_env.platform = execute_output(test_env.testing_paths.lua .. " -e \"cfg = require('luarocks.core.cfg'); cfg.init(); print(cfg.arch)\"", false, test_env.env_variables)
       test_env.wrapper_extension = test_env.TEST_TARGET_OS == "windows" and ".bat" or ""
@@ -916,7 +919,8 @@ function test_env.main()
       table.insert(urls, "/md5-1.2-1.src.rock")
       --table.insert(urls, "/lzlib-0.4.1.53-1.src.rock")
       table.insert(urls, "/lua-zlib-1.2-0.src.rock")
-      rocks = {"luafilesystem", "luasocket", "md5", "lua-zlib"}
+      table.insert(urls, "/lua-bz2-0.1.0-1.src.rock")
+      rocks = {"luafilesystem", "luasocket", "md5", "lua-zlib", "lua-bz2"}
       if test_env.TEST_TARGET_OS ~= "windows" then
          table.insert(urls, "/luaposix-33.2.1-1.src.rock")
          table.insert(rocks, "luaposix")
@@ -924,9 +928,12 @@ function test_env.main()
    end
 
    -- luacov is needed for both minimal or full environment
-   table.insert(urls, "/luacov-0.11.0-1.rockspec")
-   table.insert(urls, "/luacov-0.11.0-1.src.rock")
+   table.insert(urls, "/luacov-0.13.0-1.rockspec")
+   table.insert(urls, "/luacov-0.13.0-1.src.rock")
+   table.insert(urls, "/cluacov-0.1.1-1.rockspec")
+   table.insert(urls, "/cluacov-0.1.1-1.src.rock")
    table.insert(rocks, "luacov")
+   table.insert(rocks, "cluacov")
 
    -- Download rocks needed for LuaRocks testing environment
    lfs.mkdir(testing_paths.testing_server)

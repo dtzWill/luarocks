@@ -6,7 +6,6 @@ local search = require("luarocks.search")
 local queries = require("luarocks.queries")
 local fs = require("luarocks.fs")
 local dir = require("luarocks.dir")
-local cfg = require("luarocks.core.cfg")
 
 
 -- @return boolean or (nil, string): true if successful or nil followed
@@ -62,7 +61,7 @@ function download.download(arch, name, version, all)
       end
    else
       local url
-      url, search_err = search.find_suitable_rock(query)
+      url, search_err = search.find_suitable_rock(query, true)
       if url then
 		  -- todo could reutrn the url too
          return download.get_file(url), url

@@ -42,7 +42,7 @@ end
 -- Formats tables with cycles recursively to any depth.
 -- References to other tables are shown as values.
 -- Self references are indicated.
--- The string returned is "Lua code", which can be procesed
+-- The string returned is "Lua code", which can be processed
 -- (in the case in which indent is composed by spaces or "--").
 -- Userdata and function keys and values are shown as strings,
 -- which logically are exactly not equivalent to the original code.
@@ -120,13 +120,14 @@ function util.show_table(t, tname, top_indent)
    return cart .. autoref
 end
 
---- Merges contents of src on top of dst's contents.
+--- Merges contents of src on top of dst's contents
+-- (i.e. if an key from src already exists in dst, replace it).
 -- @param dst Destination table, which will receive src's contents.
 -- @param src Table which provides new contents to dst.
 function util.deep_merge(dst, src)
    for k, v in pairs(src) do
       if type(v) == "table" then
-         if not dst[k] then
+         if dst[k] == nil then
             dst[k] = {}
          end
          if type(dst[k]) == "table" then
@@ -140,13 +141,14 @@ function util.deep_merge(dst, src)
    end
 end
 
---- Merges contents of src below those of dst's contents.
+--- Merges contents of src below those of dst's contents
+-- (i.e. if an key from src already exists in dst, do not replace it).
 -- @param dst Destination table, which will receive src's contents.
 -- @param src Table which provides new contents to dst.
 function util.deep_merge_under(dst, src)
    for k, v in pairs(src) do
       if type(v) == "table" then
-         if not dst[k] then
+         if dst[k] == nil then
             dst[k] = {}
          end
          if type(dst[k]) == "table" then
@@ -165,13 +167,23 @@ end
 -- @param list string: A path string (from $PATH or package.path)
 -- @param sep string: The separator
 -- @param lua_version (optional) string: The Lua version to use.
-function util.cleanup_path(list, sep, lua_version)
+-- @param keep_first (optional) if true, keep first occurrence in case
+-- of duplicates; otherwise keep last occurrence. The default is false.
+function util.cleanup_path(list, sep, lua_version, keep_first)
    assert(type(list) == "string")
    assert(type(sep) == "string")
    local parts = util.split_string(list, sep)
    local final, entries = {}, {}
-   for _, part in ipairs(parts) do
-      part = part:gsub("//", "/")
+   local start, stop, step
+
+   if keep_first then
+      start, stop, step = 1, #parts, 1
+   else
+      start, stop, step = #parts, 1, -1
+   end
+
+   for i = start, stop, step do
+      local part = parts[i]:gsub("//", "/")
       if lua_version then
          part = part:gsub("/lua/([%d.]+)/", function(part_version)
             if part_version:sub(1, #lua_version) ~= lua_version then            
@@ -180,10 +192,12 @@ function util.cleanup_path(list, sep, lua_version)
          end)
       end
       if not entries[part] then
-         table.insert(final, part)
+         local at = keep_first and #final+1 or 1
+         table.insert(final, at, part)
          entries[part] = true
       end
    end
+
    return table.concat(final, sep)
 end
 

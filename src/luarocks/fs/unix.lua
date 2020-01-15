@@ -98,13 +98,14 @@ function unix.wrap_script(script, target, deps_mode, name, version, ...)
 
    local argv = {
       fs.Q(dir.path(cfg.variables["LUA_BINDIR"], cfg.lua_interpreter)),
-      script and fs.Q(script) or "",
+      "-e",
+      fs.Q(table.concat(luainit, ";")),
+      script and fs.Q(script) or [[$([ "$*" ] || echo -i)]],
       ...
    }
 
    wrapper:write("#!/bin/sh\n\n")
    wrapper:write("LUAROCKS_SYSCONFDIR="..fs.Q(cfg.sysconfdir) .. " ")
-   wrapper:write("LUA_INIT="..fs.Q(table.concat(luainit, ";")).." ")
    wrapper:write("exec "..table.concat(argv, " ")..' "$@"\n')
    wrapper:close()
 
@@ -204,6 +205,13 @@ function unix._unix_moderate_permissions(perms)
       moderated_perms = moderated_perms .. rwx_to_octal[new_perm]
    end
    return moderated_perms
+end
+
+function unix.system_cache_dir()
+   if fs.is_dir("/var/cache") then
+      return "/var/cache"
+   end
+   return dir.path(fs.system_temp_dir(), "cache")
 end
 
 return unix

@@ -72,13 +72,18 @@ local function fetch_manifest_from(repo_url, filename)
    local cache_dir = dir.path(cfg.local_cache, name)
    local ok = fs.make_dir(cache_dir)
    if not ok then
-      return nil, "Failed creating temporary cache directory "..cache_dir
+      cfg.local_cache = fs.make_temp_dir("local_cache")
+      cache_dir = dir.path(cfg.local_cache, name)
+      ok = fs.make_dir(cache_dir)
+      if not ok then
+         return nil, "Failed creating temporary cache directory "..cache_dir
+      end
    end
-   local file, err, errcode = fetch.fetch_url(url, dir.path(cache_dir, filename), true)
+   local file, err, errcode, from_cache = fetch.fetch_url(url, dir.path(cache_dir, filename), true)
    if not file then
       return nil, "Failed fetching manifest for "..repo_url..(err and " - "..err or ""), errcode
    end
-   return file
+   return file, nil, nil, from_cache
 end
 
 --- Load a local or remote manifest describing a repository.
@@ -86,9 +91,11 @@ end
 -- through this function.
 -- @param repo_url string: URL or pathname for the repository.
 -- @param lua_version string: Lua version in "5.x" format, defaults to installed version.
+-- @param versioned_only boolean: If true, do not fall back to the main manifest
+-- if a versioned manifest was not found.
 -- @return table or (nil, string, [string]): A table representing the manifest,
 -- or nil followed by an error message and an optional error code.
-function manif.load_manifest(repo_url, lua_version)
+function manif.load_manifest(repo_url, lua_version, versioned_only)
    assert(type(repo_url) == "string")
    assert(type(lua_version) == "string" or not lua_version)
    lua_version = lua_version or cfg.lua_version
@@ -102,11 +109,11 @@ function manif.load_manifest(repo_url, lua_version)
    local filenames = {
       "manifest-"..lua_version..".zip",
       "manifest-"..lua_version,
-      "manifest",
+      not versioned_only and "manifest" or nil,
    }
 
    local protocol, repodir = dir.split_url(repo_url)
-   local pathname
+   local pathname, from_cache
    if protocol == "file" then
       for _, filename in ipairs(filenames) do
          pathname = dir.path(repodir, filename)
@@ -117,7 +124,7 @@ function manif.load_manifest(repo_url, lua_version)
    else
       local err, errcode
       for _, filename in ipairs(filenames) do
-         pathname, err, errcode = fetch_manifest_from(repo_url, filename)
+         pathname, err, errcode, from_cache = fetch_manifest_from(repo_url, filename)
          if pathname then
             break
          end
@@ -128,16 +135,18 @@ function manif.load_manifest(repo_url, lua_version)
    end
    if pathname:match(".*%.zip$") then
       pathname = fs.absolute_name(pathname)
-      local dirname = dir.dir_name(pathname)
-      fs.change_dir(dirname)
       local nozip = pathname:match("(.*)%.zip$")
-      fs.delete(nozip)
-      local ok, err = fs.unzip(pathname)
-      fs.pop_dir()
-      if not ok then
-         fs.delete(pathname)
-         fs.delete(pathname..".timestamp")
-         return nil, "Failed extracting manifest file: " .. err
+      if not from_cache then
+         local dirname = dir.dir_name(pathname)
+         fs.change_dir(dirname)
+         fs.delete(nozip)
+         local ok, err = fs.unzip(pathname)
+         fs.pop_dir()
+         if not ok then
+            fs.delete(pathname)
+            fs.delete(pathname..".timestamp")
+            return nil, "Failed extracting manifest file: " .. err
+         end
       end
       pathname = nozip
    end

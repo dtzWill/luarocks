@@ -49,44 +49,73 @@ do
 end
 
 do
-   local function load_fns(fs_table)
+   local function load_fns(fs_table, inits)
       for name, fn in pairs(fs_table) do
-         if not fs[name] then
+         if name ~= "init" and not fs[name] then
             fs[name] = fn
+         end
+      end
+      if fs_table.init then
+         table.insert(inits, fs_table.init)
+      end
+   end
+
+   local function load_platform_fns(patt, inits)
+      local each_platform = cfg.each_platform
+
+      -- FIXME A quick hack for the experimental Windows build
+      if os.getenv("LUAROCKS_CROSS_COMPILING") then
+         each_platform = function()
+            local i = 0
+            local plats = { "linux", "unix" }
+            return function()
+               i = i + 1
+               return plats[i]
+            end
+         end
+      end
+
+      for platform in each_platform("most-specific-first") do
+         local ok, fs_plat = pcall(require, patt:format(platform))
+         if ok and fs_plat then
+            load_fns(fs_plat, inits)
          end
       end
    end
 
    function fs.init()
+      local inits = {}
+
       if fs.current_dir then
-         -- already initialized
-         return
-      end
-
-      if not cfg.each_platform then
-         error("cfg is not initalized, please run cfg.init() first")
-      end
-
-      -- Load platform-specific functions
-      local loaded_platform = nil
-      for platform in cfg.each_platform() do
-         local ok, fs_plat = pcall(require, "luarocks.fs."..platform)
-         if ok and fs_plat then
-            loaded_platform = platform
-            load_fns(fs_plat)
-            break
+         -- unload luarocks fs so it can be reloaded using all modules
+         -- providing extra functionality in the current package paths
+         for k, _ in pairs(fs) do
+            if k ~= "init" and k ~= "verbose" then
+               fs[k] = nil
+            end
+         end
+         for m, _ in pairs(package.loaded) do
+            if m:match("luarocks%.fs%.") then
+               package.loaded[m] = nil
+            end
          end
       end
 
+      -- Load platform-specific functions
+      load_platform_fns("luarocks.fs.%s", inits)
+
       -- Load platform-independent pure-Lua functionality
-      local fs_lua = require("luarocks.fs.lua")
-      load_fns(fs_lua)
+      load_fns(require("luarocks.fs.lua"), inits)
 
       -- Load platform-specific fallbacks for missing Lua modules
-      local ok, fs_plat_tools = pcall(require, "luarocks.fs."..loaded_platform..".tools")
-      if ok and fs_plat_tools then
-         load_fns(fs_plat_tools)
-         load_fns(require("luarocks.fs.tools"))
+      load_platform_fns("luarocks.fs.%s.tools", inits)
+
+      -- Load platform-independent external tool functionality
+      load_fns(require("luarocks.fs.tools"), inits)
+
+      -- Run platform-specific initializations after everything is loaded
+      for _, init in ipairs(inits) do
+         init()
       end
    end
 end

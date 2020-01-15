@@ -11,11 +11,10 @@ local multipart = require("luarocks.upload.multipart")
 local Api = {}
 
 local function upload_config_file()
-   local conf = cfg.which_config()
-   if not conf.user.file then
+   if not cfg.config_files.user.file then
       return nil
    end
-   return (conf.user.file:gsub("/[^/]+$", "/upload_config.lua"))
+   return (cfg.config_files.user.file:gsub("/[^/]+$", "/upload_config.lua"))
 end
 
 function Api:load_config()
@@ -140,7 +139,7 @@ function Api:request(url, params, post_params)
    local tmpfile = fs.tmpname()
    if post_params then
       method = "POST"
-      local curl_cmd = fs.Q(vars.CURL).." -f -k -L --silent --user-agent \""..cfg.user_agent.." via curl\" "
+      local curl_cmd = vars.CURL.." -f -k -L --silent --user-agent \""..cfg.user_agent.." via curl\" "
       for k,v in pairs(post_params) do
          local var = v
          if type(v) == "table" then
@@ -237,28 +236,29 @@ function Api:request(url, params, post_params)
    if self.debug then
       util.printout(tostring(status))
    end
-   if status ~= 200 then
-      return nil, "API returned " .. tostring(status) .. " - " .. redact_api_url(url)
+   local pok, ret, err = pcall(json.decode, table.concat(out))
+   if pok and ret then
+      return ret
    end
-   return json.decode(table.concat(out))
+   return nil, "API returned " .. tostring(status) .. " - " .. redact_api_url(url)
 end
 
 end
 
-function api.new(flags)
+function api.new(args)
    local self = {}
    setmetatable(self, { __index = Api })
    self.config = self:load_config() or {}
-   self.config.server = flags["server"] or self.config.server or cfg.upload.server
+   self.config.server = args.server or self.config.server or cfg.upload.server
    self.config.version = self.config.version or cfg.upload.version
-   self.config.key = flags["temp-key"] or flags["api-key"] or self.config.key
-   self.debug = flags["debug"]
+   self.config.key = args.temp_key or args.api_key or self.config.key
+   self.debug = args.debug
    if not self.config.key then
       return nil, "You need an API key to upload rocks.\n" ..
                   "Navigate to "..self.config.server.."/settings to get a key\n" ..
                   "and then pass it through the --api-key=<key> flag."
    end
-   if flags["api-key"] then
+   if args.api_key then
       self:save_config()
    end
    return self

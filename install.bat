@@ -8,7 +8,6 @@ local vars = {}
 vars.PREFIX = nil
 vars.VERSION = "3.0"
 vars.SYSCONFDIR = nil
-vars.SYSCONFFORCE = nil
 vars.CONFBACKUPDIR = nil
 vars.SYSCONFFILENAME = nil
 vars.CONFIG_FILE = nil
@@ -67,8 +66,17 @@ local function exec(cmd)
 end
 
 local function exists(filename)
-	local cmd = [[.\win32\tools\test -e "]]..filename..[["]]
-	return exec(cmd)
+	local fd, _, code = io.open(filename, "r")
+	if code == 13 then
+		-- code 13 means "Permission denied" on both Unix and Windows
+		-- io.open on folders always fails with code 13 on Windows
+		return true
+	end
+	if fd then
+		fd:close()
+		return true
+	end
+	return false
 end
 
 local function mkdir (dir)
@@ -188,7 +196,6 @@ local function parse_options(args)
 			vars.PREFIX = option.value
 		elseif name == "/CONFIG" then
 			vars.SYSCONFDIR = option.value
-			vars.SYSCONFFORCE = true
 		elseif name == "/TREE" then
 			vars.TREE_ROOT = option.value
 		elseif name == "/SCRIPTS" then
@@ -439,7 +446,7 @@ local function get_registry(key, value)
 	return nil
 end
 
-local function get_visual_studio_directory()
+local function get_visual_studio_directory_from_registry()
 	assert(type(vars.LUA_RUNTIME)=="string", "requires vars.LUA_RUNTIME to be set before calling this function.")
 	local major, minor = vars.LUA_RUNTIME:match('VCR%u*(%d+)(%d)$') -- MSVCR<x><y> or VCRUNTIME<x><y>
 	if not major then 
@@ -460,6 +467,47 @@ local function get_visual_studio_directory()
     end
 	end
 	return nil
+end
+
+local function get_visual_studio_directory_from_vswhere()
+	assert(type(vars.LUA_RUNTIME)=="string", "requires vars.LUA_RUNTIME to be set before calling this function.")
+	local major, minor = vars.LUA_RUNTIME:match('VCR%u*(%d+)(%d)$')
+	if not major then
+		print(S[[    Cannot auto-detect Visual Studio version from $LUA_RUNTIME]])
+		return nil
+	end
+	if tonumber(major) < 14 then
+		return nil
+	end
+	local program_dir = os.getenv('PROGRAMFILES(X86)')
+	if not program_dir then
+		return nil
+	end
+	local vswhere = program_dir.."\\Microsoft Visual Studio\\Installer\\vswhere.exe"
+	if not exists(vswhere) then
+		return nil
+	end
+	local f, msg = io.popen('"'..vswhere..'" -products * -property installationPath')
+	if not f then return nil, "failed to run vswhere: "..msg end
+	local vsdir = nil
+	while true do
+		local l, err = f:read()
+		if not l then
+			if err then
+				f:close()
+				return nil, err
+			else
+				break
+			end
+		end
+		vsdir = l
+	end
+	f:close()
+	if not vsdir then
+		return nil
+	end
+	print("    Visual Studio 2017 or higher found in: "..vsdir)
+	return vsdir
 end
 
 local function get_windows_sdk_directory()
@@ -498,8 +546,22 @@ local function get_msvc_env_setup_cmd()
 	assert(type(vars.UNAME_M) == "string", "requires vars.UNAME_M to be set before calling this function.")
 	local x64 = vars.UNAME_M=="x86_64"
 
-	-- 1. try visual studio command line tools
-	local vcdir = get_visual_studio_directory()
+	-- 1. try visual studio command line tools of VS 2017 or higher
+	local vsdir, err = get_visual_studio_directory_from_vswhere()
+	if err then
+		print("    Error when finding Visual Studio directory from vswhere: "..err)
+	end
+	if vsdir then
+		local vcvarsall = vsdir .. '\\VC\\Auxiliary\\Build\\vcvarsall.bat'
+		if exists(vcvarsall) then
+			local vcvarsall_args = { x86 = "", x86_64 = " x64" }
+			assert(vcvarsall_args[vars.UNAME_M], "vars.UNAME_M: only x86 and x86_64 are supported")
+			return ('call "%s"%s'):format(vcvarsall, vcvarsall_args[vars.UNAME_M])
+		end
+	end
+
+	-- 2. try visual studio command line tools
+	local vcdir = get_visual_studio_directory_from_registry()
 	if vcdir then
 		local vcvars_bats = {
 			x86 = {
@@ -520,7 +582,7 @@ local function get_msvc_env_setup_cmd()
 		end
 
 		-- try vcvarsall.bat in case MS changes the undocumented bat files above.
-		-- but this way we don't konw if specified compiler is installed...
+		-- but this way we don't know if specified compiler is installed...
 		local vcvarsall = vcdir .. 'vcvarsall.bat'
 		if exists(vcvarsall) then
 			local vcvarsall_args = { x86 = "", x86_64 = " amd64" }
@@ -528,7 +590,7 @@ local function get_msvc_env_setup_cmd()
 		end
 	end
 
-	-- 2. try for Windows SDKs command line tools.
+	-- 3. try for Windows SDKs command line tools.
 	local wsdkdir = get_windows_sdk_directory()
 	if wsdkdir then
 		local setenv = wsdkdir.."Bin\\SetEnv.cmd"
@@ -826,7 +888,6 @@ vars.SYSCONFFILENAME = S"config-$LUA_VERSION.lua"
 vars.CONFIG_FILE = vars.SYSCONFDIR.."\\"..vars.SYSCONFFILENAME
 if SELFCONTAINED then
 	vars.SYSCONFDIR = vars.PREFIX
-	vars.SYSCONFFORCE = true
 	vars.TREE_ROOT = vars.PREFIX..[[\systree]]
 	REGISTRY = false
 end
@@ -1027,13 +1088,11 @@ return {
    SYSTEM = [[$SYSTEM]],
    PROCESSOR = [[$UNAME_M]],
    PREFIX = [[$PREFIX]],
+   SYSCONFDIR = [[$SYSCONFDIR]],
    WIN_TOOLS = [[$PREFIX/tools]],
 ]=])
 if FORCE_CONFIG then
 	f:write("   FORCE_CONFIG = true,\n")
-end
-if vars.SYSCONFFORCE then  -- only write this value when explcitly given, otherwise rely on defaults
-	f:write(S("   SYSCONFDIR = [[$SYSCONFDIR]],\n"))
 end
 f:write("}\n")
 f:close()
@@ -1126,7 +1185,7 @@ end
 -- ***********************************************************
 -- Cleanup
 -- ***********************************************************
--- remove regsitry related files, no longer needed
+-- remove registry related files, no longer needed
 exec( S[[del "$PREFIX\LuaRocks.reg.*" >NUL]] )
 
 -- ***********************************************************

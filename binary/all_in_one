@@ -45,7 +45,6 @@ local fs = require("luarocks.fs")
 local cfg = require("luarocks.core.cfg")
 local cmd = require("luarocks.cmd")
 local deps = require("luarocks.deps")
-local util = require("luarocks.util")
 local path = require("luarocks.path")
 local manif = require("luarocks.manif")
 local queries = require("luarocks.queries")
@@ -141,11 +140,11 @@ end
 
 local function write_hardcoded_module(dir)
 
-   local system
-   local processor = if_platform("windows", "x86")
-
+   local system, processor
    if if_platform("unix", true) then
       system, processor = sysdetect.detect()
+   else
+      system, processor = "windows", "x86"
    end
 
    local hardcoded = {
@@ -406,7 +405,8 @@ local function generate(main_program, dir, skip)
    fd:write(reindent_c(table.concat(out, "\n")))
    fd:close()
 
-   deps.check_lua(cfg.variables)
+   deps.check_lua_incdir(cfg.variables)
+   deps.check_lua_libdir(cfg.variables)
    
    cmd = table.concat(filter_in(nonnull, {
       CC, "-o", TARGET .. "/" .. program_name .. ".exe",
@@ -420,6 +420,7 @@ local function generate(main_program, dir, skip)
       --if_platform("windows", "mingw/liblua.a"), -- FIXME
       cfg.variables.LUA_LIBDIR .. "/" .. cfg.variables.LUALIB:gsub("%.so.*$", ".a"),
       if_platform("unix", "-ldl"),
+      if_platform("unix", "-lpthread"),
       "-lm"
    }), " ")
    print(cmd)
@@ -457,7 +458,7 @@ local function main()
    
    local dependencies = {
       md5 = "md5",
-      luasec = "./binary/luasec-0.7alpha-2.rockspec",
+      luasec = "./binary/luasec-0.8.1-2.rockspec",
       luaposix = if_platform("unix", "./binary/luaposix-34.0.4-1.rockspec"),
       luasocket = "luasocket",
       ["lua-zlib"] = "./binary/lua-zlib-1.2-0.rockspec",

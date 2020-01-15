@@ -29,7 +29,12 @@ canonicalpath() {
    else
       if cd "$(dirname "$1")" >/dev/null 2>&1
       then
-         echo "$PWD/$(basename "$1")"
+         if [ "$PWD" = "/" ]
+         then
+            echo "/$(basename "$1")"
+         else
+            echo "$PWD/$(basename "$1")"
+         fi
       else
          echo "$1"
       fi
@@ -440,7 +445,7 @@ check_incdir() {
    echo
    echo "If the development files for Lua (headers and libraries)"
    echo "are installed in your system, you may need to use the"
-   echo "$(BOLD --with-lua) or $(BOLD --with-include) flags to specify their location."
+   echo "$(BOLD --with-lua) or $(BOLD --with-lua-include) flags to specify their location."
    echo
    echo "If those files are not yet installed, you need to install"
    echo "them using the appropriate method for your operating system."

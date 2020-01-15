@@ -147,7 +147,7 @@ end
 
 --- Driver function for the builtin build back-end.
 -- @param rockspec table: the loaded rockspec.
--- @return boolean or (nil, string): true if no errors ocurred,
+-- @return boolean or (nil, string): true if no errors occurred,
 -- nil and an error message otherwise.
 function builtin.run(rockspec)
    assert(rockspec:type() == "rockspec")
@@ -243,7 +243,7 @@ function builtin.run(rockspec)
          local extras = { unpack(objects) }
          add_flags(extras, "-L%s", libdirs)
          if cfg.gcc_rpath then
-            add_flags(extras, "-Wl,-rpath,%s:", libdirs)
+            add_flags(extras, "-Wl,-rpath,%s", libdirs)
          end
          add_flags(extras, "-l%s", libraries)
          if cfg.link_lua_explicitly then

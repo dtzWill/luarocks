@@ -35,7 +35,7 @@ $(builddir)/config-$(LUA_VERSION).lua: config.unix
 	@printf -- '-- LuaRocks configuration\n\n'\
 	'rocks_trees = {\n'\
 	'   { name = "user", root = home .. "/.luarocks" };\n'\
-	'   { name = "system", root = "'"$(rocks_tree)"'" };\n'\
+	"$$([ "$(rocks_tree)" != "$(HOME)/.luarocks" ] && printf '   { name = "system", root = "'"$(rocks_tree)"'" };\\n')"\
 	'}\n'\
 	"$$([ -n "$(LUA_INTERPRETER)" ] && printf 'lua_interpreter = "%s";\\n' "$(LUA_INTERPRETER)")"\
 	'variables = {\n'\
@@ -47,18 +47,19 @@ $(builddir)/config-$(LUA_VERSION).lua: config.unix
 	> $@
 
 luarocks: config.unix $(builddir)/config-$(LUA_VERSION).lua
+	mkdir -p .luarocks
+	cp $(builddir)/config-$(LUA_VERSION).lua .luarocks/config-$(LUA_VERSION).lua
 	rm -f src/luarocks/core/hardcoded.lua
 	echo "#!/bin/sh" > luarocks
-	echo "unset LUA_PATH LUA_PATH_5_2 LUA_PATH_5_3 LUA_PATH_5_4" >> luarocks
+	echo "unset LUA_PATH LUA_PATH_5_2 LUA_PATH_5_3 LUA_PATH_5_4 LUA_CPATH LUA_CPATH_5_2 LUA_CPATH_5_3 LUA_CPATH_5_4" >> luarocks
 	echo 'LUAROCKS_SYSCONFDIR="$(luarocksconfdir)" LUA_PATH="$(CURDIR)/src/?.lua;;" exec "$(LUA)" "$(CURDIR)/src/bin/luarocks" --project-tree="$(CURDIR)/lua_modules" "$$@"' >> luarocks
 	chmod +rx ./luarocks
 	./luarocks init
-	cp $(builddir)/config-$(LUA_VERSION).lua .luarocks/config-$(LUA_VERSION).lua
 
 luarocks-admin: config.unix
 	rm -f src/luarocks/core/hardcoded.lua
 	echo "#!/bin/sh" > luarocks-admin
-	echo "unset LUA_PATH LUA_PATH_5_2 LUA_PATH_5_3 LUA_PATH_5_4" >> luarocks-admin
+	echo "unset LUA_PATH LUA_PATH_5_2 LUA_PATH_5_3 LUA_PATH_5_4 LUA_CPATH LUA_CPATH_5_2 LUA_CPATH_5_3 LUA_CPATH_5_4" >> luarocks-admin
 	echo 'LUAROCKS_SYSCONFDIR="$(luarocksconfdir)" LUA_PATH="$(CURDIR)/src/?.lua;;" exec "$(LUA)" "$(CURDIR)/src/bin/luarocks-admin" --project-tree="$(CURDIR)/lua_modules" "$$@"' >> luarocks-admin
 	chmod +rx ./luarocks-admin
 
@@ -68,7 +69,8 @@ $(builddir)/luarocks: src/bin/luarocks config.unix
 	'package.loaded["luarocks.core.hardcoded"] = { '\
 	"$$([ -n "$(FORCE_CONFIG)" ] && printf 'FORCE_CONFIG = true, ')"\
 	'SYSCONFDIR = [[$(luarocksconfdir)]] }\n'\
-	'package.path=[[$(luadir)/?.lua;]] .. package.path\n'; \
+	'package.path=[[$(luadir)/?.lua;]] .. package.path\n'\
+	'local list = package.searchers or package.loaders; table.insert(list, 1, function(name) if name:match("^luarocks%%.") then return loadfile([[$(luadir)/]] .. name:gsub([[%%.]], [[/]]) .. [[.lua]]) end end)\n'; \
 	tail -n +2 src/bin/luarocks \
 	)> "$@"
 
@@ -78,7 +80,8 @@ $(builddir)/luarocks-admin: src/bin/luarocks-admin config.unix
 	'package.loaded["luarocks.core.hardcoded"] = { '\
 	"$$([ -n "$(FORCE_CONFIG)" ] && printf 'FORCE_CONFIG = true, ')"\
 	'SYSCONFDIR = [[$(luarocksconfdir)]] }\n'\
-	'package.path=[[$(luadir)/?.lua;]] .. package.path\n'; \
+	'package.path=[[$(luadir)/?.lua;]] .. package.path\n'\
+	'local list = package.searchers or package.loaders; table.insert(list, 1, function(name) if name:match("^luarocks%%.") then return loadfile([[$(luadir)/]] .. name:gsub([[%%.]], [[/]]) .. [[.lua]]) end end)\n'; \
 	tail -n +2 src/bin/luarocks-admin \
 	)> "$@"
 
